@@ -1112,6 +1112,35 @@ class Notepad {
 
         toolbox.insertAdjacentElement('beforeend', newNotepadControl);
 
+        // Toolbox - Notepad controls - Delete notepad - Confirmation dialog
+        const deleteNotepadDialog = this.#addConfirmationDialog(
+            () => {
+                this.deleteNotepad(this.#notepad.id);
+            },
+            'Delete',
+            'Delete notepad?',
+            ['delete-notepad-dialog'],
+            this.#entryPoint
+        );
+
+        // Toolbox - Notepad controls - Delete notepad
+        const deleteNotepadControl = this.#createControl(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
+                        <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
+                        <path fill-rule="evenodd" d="M6.146 6.146a.5.5 0 0 1 .708 0L8 7.293l1.146-1.147a.5.5 0 1 1 .708.708L8.707 8l1.147 1.146a.5.5 0 0 1-.708.708L8 8.707 6.854 9.854a.5.5 0 0 1-.708-.708L7.293 8 6.146 6.854a.5.5 0 0 1 0-.708z"/>
+                        <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
+                        <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
+                    </svg>`,
+            'Delete notepad',
+            ['toolbox-element'],
+            ['toolbox-control', 'hovering-label'],
+            (event) => {
+                deleteNotepadDialog.showModal();
+            }
+        );
+
+        toolbox.insertAdjacentElement('beforeend', deleteNotepadControl);
+
         // Toolbox - Notepad controls - Export Notepad
         const exportNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">

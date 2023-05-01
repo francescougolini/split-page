@@ -500,6 +500,7 @@ dialog::backdrop {
 @media only screen and (max-width: 620px) {
     .branding {
         align-items: center;
+        display: none;
         height: 26px;
         width: 26px;
     }
@@ -637,9 +638,9 @@ dialog::backdrop {
     }
 }
 
-@media only screen and (max-height: 421px) and (min-width: 800px) {
+@media only screen and (max-height: 500px) and (min-width: 800px) {
     body {
-        min-height: 420px;
+        min-height: 499px;
     }
 }
 
