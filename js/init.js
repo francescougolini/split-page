@@ -23,7 +23,7 @@ if ('serviceWorker' in navigator) {
         // Try to register the service worker.
         try {
             // Capture the registration for later use, if needed
-            await navigator.serviceWorker.register('/service_worker.js');
+            await navigator.serviceWorker.register('./service_worker.js');
         } catch (err) {
             console.error('Service worker registration failed: ', err);
         }
