@@ -7,13 +7,13 @@ const cacheName = 'split-page-v1';
 
 // List of files to be pre-cached
 const preCacheResources = [
-    '/',
-    '/index.html',
-    '/js/init.js',
-    '/js/notepad.js',
-    '/js/utilities.js',
-    '/css/stylesheet.css',
-    '/img/favicon.png',
+    './',
+    './index.html',
+    './js/init.js',
+    './js/notepad.js',
+    './js/utilities.js',
+    './css/stylesheet.css',
+    './img/favicon.png',
 ];
 
 // When the service worker is installing, open the cache and add the pre-cache resources to it.
