@@ -4,6 +4,7 @@
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
+    "theme_color": "#4d4845",
     "description": "A simple web app to write, organise and keep notes.",
     "icons": [
       {
