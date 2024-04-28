@@ -1206,7 +1206,7 @@ class Notepad {
 
         // ... Update document's title when new text is typed in the notepad title.
         header.addEventListener('input', (event) => {
-            document.title = event.target.innerText + ' \u002D ' + this.#defaults.branding.name;
+            document.title = event.target.innerText;
         });
 
         return header;
@@ -1822,6 +1822,6 @@ class Notepad {
      * @param {String} text The content to be included in the document's title.
      */
     #updateDocumentTitle(text) {
-        document.title = text + ' \u002D ' + this.#defaults.branding.name;
+        document.title = text;
     }
 }
