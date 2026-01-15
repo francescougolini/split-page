@@ -1,7 +1,7 @@
 /**
  * Split Page - Notepad
  *
- * Copyright (c) 2023 Francesco Ugolini <contact@francescougolini.com>
+ * Copyright (c) 2023-2026 Francesco Ugolini
  *
  * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
  * distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -21,8 +21,7 @@ class Notepad {
     #notesContainer;
     #toolbox;
     #notepadsViewer;
-    #notepadObserver;
-    #notepadObserverOptions;
+    #db;
 
     #notesContainerIndex = new Map();
 
@@ -31,7 +30,6 @@ class Notepad {
         branding: {
             about: 'https://github.com/francescougolini/split-page',
             logo: `<svg aria-label="Split Page logo" xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon logo" viewBox="0 0 244 255" focusable="false" >
-                <!-- Copyright (c) 2023 Francesco Ugolini - All right reserved -->
                 <path fill-rule="evenodd" d="m 139.774,0.381005 c -43.8,0 -87.6,10.401 -108.403,31.203 -41.605,41.604995 -41.605,175.203995 0,216.798995 41.605,41.595 175.204,41.595 216.799,0 41.595,-41.595 41.595,-175.194 0,-216.798995 -20.797,-20.802 -64.597,-31.203 -108.396,-31.203 z m -13.459,39.615 h 33.681 c 20.626,1.697 36.135,21.633995 36.766,41.089995 0,14.78801 0,14.36001 0,24.696 -8.645,0.024 -25.152,0.14501 -34.627,0.004 0,-5.59 0,-8.476 0,-14.35 -0.788,-6.868 -4.762,-14.311 -14.154,-14.488 h -9.84 c -12.304,-0.375 -18.776,14.495 -9.377,26.404 21.543,22.772 29.802,30.464 49.855,54.078 29.429,33.767 21.169,76.574 -18.619,82.57 h -33.681 c -12.166,-0.404 -38.052,-4.36899 -38.942,-45.754 0,-12.836 0.317,-2.308 -0.002,-17.324 11.299,0 24.704,-0.283 34.735,-0.283 0,0 -0.004,6.457 -0.004,11.289 0.599,8.519 2.926,13.819 10.369,14.836 l 13.088,-0.566 c 10.251,0.957 19.944,-11.531 4.267,-27.43 -13.929,-15.818 -44.279,-45.765 -49.445,-51.305 l 0.002,0.016 C 75.871,90.631 91.157,39.855005 126.319,39.996005 Z" transform="matrix(0.87392363,0,0,0.91332058,0.02108468,0.0330224)"/>
             </svg>`,
             name: 'Split Page',
@@ -54,48 +52,36 @@ class Notepad {
      */
     constructor(entryPoint = undefined) {
         this.#entryPoint = entryPoint ? document.querySelector(entryPoint) : document.body;
-        this.#entryPoint.classList.add('entry-point');
+        this.#db = new utilities.StorageDB();
+        this.#init();
+    }
 
-        // Notepad
+    async #init() {
+        await this.#db.init();
+
+        this.#entryPoint.classList.add('entry-point');
         this.#notepad = document.createElement('div');
         this.#notepad.classList.add('notepad');
-
         this.#entryPoint.insertAdjacentElement('beforeend', this.#notepad);
-
-        // Notepad - Initial ID
         this.#notepad.id = utilities.generateID(this.#defaults.tags.notepad, undefined, Date.now());
 
-        // Notepad - Initial timestamps
         const currentTime = Date.now();
         this.#notepad.dataset.notepadCreated = currentTime;
         this.#notepad.dataset.notepadLastUpdate = currentTime;
 
-        // Notepad - Header
         this.#header = this.#addHeader(this.#defaults.notepadTitle, this.#notepad);
-
-        // Notepad - Notes container and first note
-        this.#notesContainer = this.#addNotesContainer(true, this.#notepad);
-
-        // Toolbox
+        this.#notesContainer = this.#addNotesContainer(false, this.#notepad);
         this.#toolbox = this.#addToolbox(this.#entryPoint);
-
-        // Notepads viewer
         this.#notepadsViewer = this.#addNotepadsViewer();
 
-        // Notepad observer - Enable notepad's auto saving
-        this.#notepadObserverOptions = { characterData: true, attributes: true, childList: true, subtree: true };
-
-        this.#notepadObserver = new MutationObserver(() => {
-            // Update the notepads's last update data attribute.
-            this.#notepad.dataset.notepadLastUpdate = Date.now();
-
-            // Add notepad to the local storage.
-            this.#storeNotepad();
-        });
-
-        // Notepad observer - Observe the header and the notes' container
-        this.#notepadObserver.observe(this.#header, this.#notepadObserverOptions);
-        this.#notepadObserver.observe(this.#notesContainer, this.#notepadObserverOptions);
+        // Load existing data
+        const all = await this.#db.getAll();
+        const last = Object.values(all).sort((a, b) => b.lastUpdate - a.lastUpdate)[0];
+        if (last) {
+            this.#fillNotepad(last);
+        } else {
+            this.newNote();
+        }
     }
 
     // Data processing
@@ -104,18 +90,18 @@ class Notepad {
      * Format:
      *
      * {
-     *      title: {String},
-     *      id: {String},
-     *      created: {Number}
-     *      lastUpdate: {Number},
-     *      notes: [
-     *          {
-     *              id: {String},
-     *              title: {String},
-     *              content: {String},
-     *              accentColor: {string} - Hex color code.
-     *          }
-     *      ]
+     * title: {String},
+     * id: {String},
+     * created: {Number}
+     * lastUpdate: {Number},
+     * notes: [
+     * {
+     * id: {String},
+     * title: {String},
+     * content: {String},
+     * accentColor: {string} - Hex color code.
+     * }
+     * ]
      * }
      */
 
@@ -217,8 +203,19 @@ class Notepad {
             this.#accentColors.push(accentColor);
         }
 
+        const debouncedSave = utilities.debounce(async () => await this.#storeNotepad(), 1000);
+
         // Create the note's HTML code.
-        const newNote = this.#createNote(noteID, title, content, accentColor, index);
+        const newNote = this.#createNote(noteID, title, content, accentColor, index, debouncedSave);
+
+        const titleElement = newNote.querySelector('.note-title');
+        const textElement = newNote.querySelector('.note-text');
+
+        titleElement.addEventListener('input', () => debouncedSave());
+        textElement.addEventListener('input', () => {
+            this.#runNoteCounters(noteID);
+            debouncedSave();
+        });
 
         // Add new note to the DOM.
         parentElement.insertAdjacentElement('beforeend', newNote);
@@ -275,60 +272,36 @@ class Notepad {
      */
     moveNote(noteID, oldIndex, newIndex) {
         const note = document.getElementById(noteID);
+        if (!note) return;
 
-        if (note) {
-            // Check if the new typed position is within min-max range.
-            newIndex = newIndex <= this.#notesContainerIndex.size ? newIndex : this.#notesContainerIndex.size;
+        // Bound checking
+        newIndex = Math.max(1, Math.min(newIndex, this.#notesContainerIndex.size));
+        if (newIndex === oldIndex) return;
 
-            const currentNote = this.#notesContainer.querySelector('[data-note-index="' + newIndex + '"]');
+        const targetNote = this.#notesContainer.querySelector(`[data-note-index="${newIndex}"]`);
 
-            // Remove the note from the index to ensure its correct repositioning.
-            note.dataset.noteIndex = undefined;
-
-            // Add the new index to the HTML element of the note.
-            const noteIndexContainer = note.querySelector('.note-index');
-            noteIndexContainer.value = newIndex;
-            noteIndexContainer.defaultValue = newIndex;
-
-            // Remove the note from the DOM.
-            document.getElementById(note.id).remove();
-
-            const cachedMovedNoteID = this.#notesContainerIndex.get(oldIndex);
-            const cachedNoteID = this.#notesContainerIndex.get(newIndex);
-
-            if (newIndex < oldIndex) {
-                // Re-insert the note in its new position.
-                this.#notesContainer.insertBefore(note, currentNote);
-
-                const cachedNoteIDs = [this.#notesContainerIndex.get(newIndex + 1)];
-
-                this.#notesContainerIndex.set(newIndex + 1, cachedNoteID);
-
-                this.#notesContainerIndex.set(newIndex, cachedMovedNoteID);
-
-                for (const [index, id] of this.#notesContainerIndex) {
-                    if (index > newIndex + 1 && index <= oldIndex) {
-                        cachedNoteIDs.push(this.#notesContainerIndex.get(index));
-                        this.#notesContainerIndex.set(index, cachedNoteIDs[cachedNoteIDs.length - 2]);
-                    }
-                }
-            } else {
-                // Re-insert the note in its new position.
-                this.#notesContainer.insertBefore(note, currentNote.nextSibling);
-
-                for (const [index, id] of this.#notesContainerIndex) {
-                    if (index >= oldIndex && index < newIndex) {
-                        this.#notesContainerIndex.set(index, this.#notesContainerIndex.get(index + 1));
-                    } else if (index == newIndex) {
-                        this.#notesContainerIndex.set(index, cachedMovedNoteID);
-                    }
-                }
-            }
-
-            this.#indexNotes();
+        // DOM Move
+        if (newIndex < oldIndex) {
+            this.#notesContainer.insertBefore(note, targetNote);
+        } else {
+            this.#notesContainer.insertBefore(note, targetNote.nextSibling);
         }
-    }
 
+        // Map Synchronization
+        const entries = Array.from(this.#notesContainerIndex.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map((entry) => entry[1]);
+
+        const [movedId] = entries.splice(oldIndex - 1, 1);
+        entries.splice(newIndex - 1, 0, movedId);
+
+        this.#notesContainerIndex.clear();
+        entries.forEach((id, i) => {
+            this.#notesContainerIndex.set(i + 1, id);
+        });
+
+        this.#indexNotes();
+    }
     /**
      * Change the accent color of the note from a list of available colors.
      *
@@ -460,7 +433,7 @@ class Notepad {
         // Remove non-alphanumeric characters.
         const filename = notepadTitle.replace(/[^\p{L}^\p{N}]+/gu, ' ').trim() + '.notepad.json';
 
-        utilities.downloadLocalFile(exportedNotepad, filename, 'data:application/json');
+        utilities.downloadLocalFile(JSON.stringify(exportedNotepad), filename, 'data:application/json');
     }
 
     /**
@@ -469,70 +442,45 @@ class Notepad {
      * @param {Function} customCallback A callback to run additional post-import actions.
      */
     #importNotepad(customCallback = undefined) {
-        utilities.uploadLocalFile((notepadJSON) => {
+        utilities.uploadLocalFile(async (notepadJSON) => {
             const notepad = JSON.parse(notepadJSON);
+            if (!notepad || !notepad.notes) {
+                alert('Error - Invalid Notepad file.');
+                return;
+            }
 
-            if (notepad && notepad.notes) {
-                // The function to import the notepad and add notepads list.
-                const importNotepad = () => {
-                    this.#fillNotepad(notepad, true);
-                    this.#storeNotepad(notepad);
+            const executeImport = async (targetNotepad) => {
+                this.#fillNotepad(targetNotepad, true);
+                await this.#storeNotepad(targetNotepad);
+                if (customCallback) customCallback(targetNotepad);
+                this.#updateNotepadsList();
+            };
 
-                    if (customCallback) {
-                        customCallback(notepad);
-                    }
-
-                    this.#updateNotepadsList();
-                };
-
-                // If a notepad with the same ID already exist, ask what to do.
-                if (this.#getStoredNotepad(notepad.id)) {
-                    // Note toolbox - Controls - Delete note - Confirmation dialog
-                    const replaceExistingNotepadDialog = this.#createDialog('A version of this notepad already exists', [
-                        {
-                            action: () => {
-                                // Change ID
-                                notepad.id = utilities.generateID(this.#defaults.tags.notepad, undefined, Date.now());
-
-                                // Import notepad
-                                importNotepad();
-
-                                // Remove dialog from DOM.
-                                replaceExistingNotepadDialog.remove();
-                            },
-                            actionLabel: 'Keep both notepads',
-                            customClasses: ['dialog-button-standard'],
+            if (await this.#getStoredNotepad(notepad.id)) {
+                const dialog = this.#createDialog('A version of this notepad already exists', [
+                    {
+                        actionLabel: 'Keep both',
+                        customClasses: ['dialog-button-standard'],
+                        action: () => {
+                            notepad.id = utilities.generateID(this.#defaults.tags.notepad, undefined, Date.now());
+                            executeImport(notepad);
                         },
-                        {
-                            action: () => {
-                                // Import notepad.
-                                importNotepad();
-
-                                // Remove dialog from DOM.
-                                replaceExistingNotepadDialog.remove();
-                            },
-                            actionLabel: 'Replace existing notepad',
-                            customClasses: ['dialog-button-standard'],
-                        },
-                        {
-                            action: () => {
-                                // Remove dialog from DOM.
-                                replaceExistingNotepadDialog.remove();
-                            },
-                            actionLabel: 'Cancel',
-                            customClasses: ['dialog-button-standard'],
-                        },
-                    ]);
-
-                    this.#entryPoint.insertAdjacentElement('beforeend', replaceExistingNotepadDialog);
-
-                    replaceExistingNotepadDialog.showModal();
-                } else {
-                    // Just import the notepad.
-                    importNotepad();
-                }
+                    },
+                    {
+                        actionLabel: 'Replace existing',
+                        customClasses: ['dialog-button-confirm'],
+                        action: () => executeImport(notepad),
+                    },
+                    {
+                        actionLabel: 'Cancel',
+                        customClasses: ['dialog-button-standard'],
+                        action: () => {}, // Just closes
+                    },
+                ]);
+                this.#entryPoint.insertAdjacentElement('beforeend', dialog);
+                dialog.showModal();
             } else {
-                alert('Error - Notepad not imported.');
+                executeImport(notepad);
             }
         }, 'data:application/json');
     }
@@ -540,25 +488,25 @@ class Notepad {
     /**
      * Create a JSON-formatted backup copy of all notepads in the local storage.
      */
-    #backupNotepads() {
-        const notepads = this.#getAllStoredNotepads();
+    async #backupNotepads() {
+        const notepads = await this.#getAllStoredNotepads();
         const filename = 'notepads_' + Date.now() + '.backup.json';
 
-        utilities.downloadLocalFile(notepads, filename, 'data:application/json');
+        utilities.downloadLocalFile(JSON.stringify(notepads), filename, 'data:application/json');
     }
 
     /**
      * Restore a backup of notepads from a backup JSON-formatted file to the local storage.
      */
     #restoreNotepads() {
-        utilities.uploadLocalFile((notepadsJSON) => {
+        utilities.uploadLocalFile(async (notepadsJSON) => {
             const notepads = JSON.parse(notepadsJSON);
 
             if (notepads && Object.keys(notepads).length > 0) {
                 // Run the action in fallback mode to prevent the corruption of the local storage.
-                utilities.dataFallbackMode(this.#getAllStoredNotepads(), notepads, (notepads) => {
+                utilities.dataFallbackMode(await this.#getAllStoredNotepads(), notepads, async (notepads) => {
                     // Replace locally stored notepads.
-                    this.#replaceStoredNotepads(notepads);
+                    await this.#replaceStoredNotepads(notepads);
 
                     // Update the notepads list.
                     this.#updateNotepadsList();
@@ -577,7 +525,7 @@ class Notepad {
      *
      * @return  An Object representing the duplicated notepad.
      */
-    #duplicateNotepad(notepad) {
+    async #duplicateNotepad(notepad) {
         // Clone the existing notepad,generate a new id for it.
         const duplicatedNotepad = Object.assign({}, notepad);
 
@@ -594,7 +542,7 @@ class Notepad {
         duplicatedNotepad.lastUpdate = currentTime;
 
         // Store the duplicated notepad in the local storage.
-        this.#storeNotepad(duplicatedNotepad);
+        await this.#storeNotepad(duplicatedNotepad);
 
         return duplicatedNotepad;
     }
@@ -605,9 +553,6 @@ class Notepad {
      * @param {Boolean} addNewNote If true, add a new empty note to the cleared notepad.
      */
     newNotepad(addNewNote = true) {
-        // Disconnect the notepad observer to avoid the new notepad to be autosaved.
-        this.#notepadObserver.disconnect();
-
         // Empty the notepad container.
         this.#notesContainer.replaceChildren();
 
@@ -632,10 +577,6 @@ class Notepad {
 
         // Restore accent colors to the default ones.
         this.#accentColors = [...this.#defaults.accentColors];
-
-        // Reactivate the notepad observer to enable autosave and keep track of changes.
-        this.#notepadObserver.observe(this.#header, this.#notepadObserverOptions);
-        this.#notepadObserver.observe(this.#notesContainer, this.#notepadObserverOptions);
     }
 
     // Notepad controls - Delete notepad
@@ -646,16 +587,13 @@ class Notepad {
      * @param {String} notepadID The id of the notepad to be deleted.
      * @param {Function} customCallback A callback to run additional post-delete actions.
      */
-    deleteNotepad(notepadID, customCallback = undefined) {
-        // If it's the open notepad, replace it with an empty one.
+    async deleteNotepad(notepadID, customCallback = undefined) {
         if (notepadID == this.#notepad.id) {
             this.newNotepad(true);
         }
 
-        // Remove the notepad from the local storage.
-        this.#removeStoredNotepad(notepadID);
+        await this.#removeStoredNotepad(notepadID);
 
-        // If provided, run the post-delete callback.
         if (customCallback) {
             customCallback();
         }
@@ -696,12 +634,12 @@ class Notepad {
 
     /**
      * Format:
-     *      notepads: {
-     *          [[Notepad id (as key)]]: {
-     *               ...see Data processing
-     *           },
-     *          ...
-     *      }
+     * notepads: {
+     * [[Notepad id (as key)]]: {
+     * ...see Data processing
+     * },
+     * ...
+     * }
      */
 
     /**
@@ -709,24 +647,10 @@ class Notepad {
      *
      * @param {Object} notepad The notepad to be stored.
      */
-    #storeNotepad(notepad = undefined) {
-        // Get the current notepads stored in the local storage.
-        const notepads = localStorage.getItem('notepads');
-        const notepadsObject = notepads ? JSON.parse(notepads) : {};
-
-        // If not specified, retrieve the content from the open notepad.
+    async #storeNotepad(notepad = undefined) {
         const toBeStoredNotepad = notepad || this.#retrieveNotepad();
-
         if (toBeStoredNotepad) {
-            // Add - or, if it exists, replace - current notepad to the local storage.
-            notepadsObject[toBeStoredNotepad.id] = toBeStoredNotepad;
-            const notepadJSON = JSON.stringify(notepadsObject);
-
-            try {
-                localStorage.setItem('notepads', notepadJSON);
-            } catch (error) {
-                alert('Local storage error.\n' + error);
-            }
+            await this.#db.set(toBeStoredNotepad);
         }
     }
 
@@ -735,19 +659,8 @@ class Notepad {
      *
      * @param {String} notepadID The id of the notepad to be removed.
      */
-    #removeStoredNotepad(notepadID) {
-        const notepads = localStorage.getItem('notepads');
-        const notepadsObject = notepads ? JSON.parse(notepads) : {};
-
-        delete notepadsObject[notepadID];
-
-        const notepadJSON = JSON.stringify(notepadsObject);
-
-        try {
-            localStorage.setItem('notepads', notepadJSON);
-        } catch (error) {
-            alert('Local storage error.\n' + error);
-        }
+    async #removeStoredNotepad(notepadID) {
+        await this.#db.delete(notepadID);
     }
 
     /**
@@ -755,13 +668,16 @@ class Notepad {
      *
      * @param {Object} notepads The object containing the new replacing notepads.
      */
-    #replaceStoredNotepads(notepads) {
-        const notepadsJSON = JSON.stringify(notepads);
+    async #replaceStoredNotepads(notepads) {
+        // First, clear existing data to avoid mixing old and new backups
+        const currentNotepads = await this.#db.getAll();
+        for (const id in currentNotepads) {
+            await this.#db.delete(id);
+        }
 
-        try {
-            localStorage.setItem('notepads', notepadsJSON);
-        } catch (error) {
-            alert('Local storage error.\n' + error);
+        // Now insert the backup data
+        for (const id in notepads) {
+            await this.#db.set(notepads[id]);
         }
     }
 
@@ -770,11 +686,15 @@ class Notepad {
      *
      * @returns An object representing the retrieved notepads.
      */
-    #getAllStoredNotepads(notepadID = undefined) {
-        const notepadsJSON = localStorage.getItem('notepads');
-        const notepads = notepadsJSON ? JSON.parse(notepadsJSON) : {};
-
-        return notepads;
+    async #getAllStoredNotepads() {
+        try {
+            // StorageDB.getAll() returns an object { id: data }
+            const notepads = await this.#db.getAll();
+            return notepads || {};
+        } catch (error) {
+            console.error('Split Page: Failed to retrieve notepads from database.', error);
+            return {};
+        }
     }
 
     /**
@@ -784,11 +704,8 @@ class Notepad {
      *
      * @returns An object representing the retrieved notepad.
      */
-    #getStoredNotepad(notepadID = undefined) {
-        const notepadsJSON = localStorage.getItem('notepads');
-        const notepads = notepadsJSON ? JSON.parse(notepadsJSON) : {};
-
-        return notepads[notepadID];
+    async #getStoredNotepad(notepadID) {
+        return await this.#db.get(notepadID);
     }
 
     /**
@@ -812,28 +729,32 @@ class Notepad {
      * @param notepads The notepads to be added in the new list.
      * @param notepadsList The DOM element with the notepads list to be updated.
      */
-    #updateNotepadsList(notepads = undefined, notepadsList = undefined) {
-        notepads = notepads || this.#getAllStoredNotepads();
+    async #updateNotepadsList(notepads = undefined, notepadsList = undefined) {
+        notepads = notepads || (await this.#getAllStoredNotepads());
         notepadsList = notepadsList || this.#notepadsViewer.querySelector('.viewer-notepads-list');
 
-        // Sort notepads by last update, from the most recent notepad to the least one.
+        // 1. Sort notepads
         let notes = [];
         for (const notepad in notepads) {
             notes.push([notepads[notepad].id, notepads[notepad].lastUpdate]);
         }
-
         const sortedNotes = notes.sort((a, b) => b[1] - a[1]);
 
-        // Clean the existing notepad list.
+        // 2. Clean the existing list
         notepadsList.replaceChildren();
 
-        // For each notepad create a line.
+        // 3. Handle Content or Empty State
         if (Object.keys(notepads).length > 0) {
-            // Add notepads to the empty notepad list.
             for (let index = 0; index < sortedNotes.length; index++) {
                 const notepadsListItem = this.#createNotepadsListItem(notepads[sortedNotes[index][0]]);
                 notepadsList.insertAdjacentElement('beforeend', notepadsListItem);
             }
+        } else {
+            // Targeted placement of the placeholder instead of using an observer
+            const notepadsListPlaceholder = document.createElement('div');
+            notepadsListPlaceholder.innerText = 'No notepads';
+            notepadsListPlaceholder.classList.add('viewer-list-empty');
+            notepadsList.insertAdjacentElement('beforeend', notepadsListPlaceholder);
         }
     }
 
@@ -850,7 +771,7 @@ class Notepad {
      *
      * @returns The HTML element representing the note.
      */
-    #createNote(noteID, noteTitle, noteText, noteAccentColor, noteIndex = 0) {
+    #createNote(noteID, noteTitle, noteText, noteAccentColor, noteIndex = 0, debouncedSave) {
         const note = document.createElement('div');
         note.id = noteID;
         note.classList.add('note');
@@ -869,6 +790,11 @@ class Notepad {
 
         note.insertAdjacentElement('beforeend', titleContainer);
 
+        // Event listener to the editable note title
+        title.addEventListener('input', (e) => {
+            debouncedSave();
+        });
+
         // Note text
         const textContainer = document.createElement('div');
         textContainer.classList.add('note-text-container');
@@ -880,6 +806,12 @@ class Notepad {
         textContainer.insertAdjacentElement('beforeend', text);
 
         note.insertAdjacentElement('beforeend', textContainer);
+
+        // Event listener to the editable note text
+        text.addEventListener('input', () => {
+            this.#runNoteCounters(noteID);
+            debouncedSave();
+        });
 
         // Note toolbox
         const toolbox = document.createElement('div');
@@ -908,7 +840,6 @@ class Notepad {
         // Note toolbox - Controls - Copy text
         const copyTextControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path d="M13 0H6a2 2 0 0 0-2 2 2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2 2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm0 13V4a2 2 0 0 0-2-2H5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1zM3 4a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4z"/>
             </svg>`,
             'Copy text',
@@ -924,7 +855,6 @@ class Notepad {
         // Note toolbox - Controls - Download note
         const downloadNoteControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path d="M8.5 6.5a.5.5 0 0 0-1 0v3.793L6.354 9.146a.5.5 0 1 0-.708.708l2 2a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 10.293V6.5z"/>
                 <path d="M14 14V4.5L9.5 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2zM9.5 3A1.5 1.5 0 0 0 11 4.5h2V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5v2z"/>
             </svg>`,
@@ -941,7 +871,6 @@ class Notepad {
         // Note toolbox - Controls - Change accent color
         const changeAccentColorControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M7.21.8C7.69.295 8 0 8 0c.109.363.234.708.371 1.038.812 1.946 2.073 3.35 3.197 4.6C12.878 7.096 14 8.345 14 10a6 6 0 0 1-12 0C2 6.668 5.58 2.517 7.21.8zm.413 1.021A31.25 31.25 0 0 0 5.794 3.99c-.726.95-1.436 2.008-1.96 3.07C3.304 8.133 3 9.138 3 10a5 5 0 0 0 10 0c0-1.201-.796-2.157-2.181-3.7l-.03-.032C9.75 5.11 8.5 3.72 7.623 1.82z"/>
                 <path fill-rule="evenodd" d="M4.553 7.776c.82-1.641 1.717-2.753 2.093-3.13l.708.708c-.29.29-1.128 1.311-1.907 2.87l-.894-.448z"/>
             </svg>`,
@@ -951,6 +880,8 @@ class Notepad {
             (event) => {
                 const noteID = event.target.closest('.note').id;
                 this.#changeNoteAccentColor(noteID);
+
+                if (debouncedSave) debouncedSave();
             }
         );
 
@@ -961,6 +892,8 @@ class Notepad {
             () => {
                 if (noteID) {
                     this.deleteNote(noteID);
+
+                    debouncedSave();
                 }
             },
             'Delete',
@@ -972,7 +905,6 @@ class Notepad {
         // Note toolbox - Controls - Delete note
         const deleteNoteControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5ZM11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0H11Zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916Zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5Z"/>
             </svg>`,
             'Delete note',
@@ -1035,6 +967,8 @@ class Notepad {
                     const newIndex = parseInt(event.target.value);
 
                     this.moveNote(noteID, oldIndex, newIndex);
+
+                    debouncedSave();
                 }
             },
             false
@@ -1062,7 +996,6 @@ class Notepad {
         // Toolbox - Notepad controls - New note
         const newNoteControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path d="M0 4a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v4a.5.5 0 0 1-1 0V7H1v5a1 1 0 0 0 1 1h5.5a.5.5 0 0 1 0 1H2a2 2 0 0 1-2-2V4Zm1 2h13V4a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2Z"/>
                 <path d="M16 12.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Zm-3.5-2a.5.5 0 0 0-.5.5v1h-1a.5.5 0 0 0 0 1h1v1a.5.5 0 0 0 1 0v-1h1a.5.5 0 0 0 0-1h-1v-1a.5.5 0 0 0-.5-.5Z"/>
             </svg>`,
@@ -1079,7 +1012,6 @@ class Notepad {
         // Toolbox - Notepad controls - Notepads viewer
         const notepadsViewerControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zM2.5 2a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3zm6.5.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3zm6.5.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3zm1.5-.5a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3z"/>
             </svg>`,
             'Notepads',
@@ -1097,7 +1029,6 @@ class Notepad {
         // Toolbox - Notepad controls - New notepad
         const newNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M8 5.5a.5.5 0 0 1 .5.5v1.5H10a.5.5 0 0 1 0 1H8.5V10a.5.5 0 0 1-1 0V8.5H6a.5.5 0 0 1 0-1h1.5V6a.5.5 0 0 1 .5-.5z"/>
                 <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                 <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1126,7 +1057,6 @@ class Notepad {
         // Toolbox - Notepad controls - Delete notepad
         const deleteNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                        <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                         <path fill-rule="evenodd" d="M6.146 6.146a.5.5 0 0 1 .708 0L8 7.293l1.146-1.147a.5.5 0 1 1 .708.708L8.707 8l1.147 1.146a.5.5 0 0 1-.708.708L8 8.707 6.854 9.854a.5.5 0 0 1-.708-.708L7.293 8 6.146 6.854a.5.5 0 0 1 0-.708z"/>
                         <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                         <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1144,7 +1074,6 @@ class Notepad {
         // Toolbox - Notepad controls - Export Notepad
         const exportNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M8 5a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 1 1 .708-.708L7.5 9.293V5.5A.5.5 0 0 1 8 5z"/>
                 <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                 <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1162,7 +1091,6 @@ class Notepad {
         // Toolbox - About
         const aboutControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
                 <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
             </svg>`,
@@ -1194,19 +1122,18 @@ class Notepad {
         header.classList.add('notepad-title', 'editable');
         header.innerText = notepadTitle;
 
-        // Header - Notepad title - Update document's title
+        // Initial title set
         this.#updateDocumentTitle(header.innerText);
 
-        // ... Update document's title when the notepad title's text changes.
-        const headerObserverOptions = { characterData: false, attributes: false, childList: true, subtree: false };
-        const headerObserver = new MutationObserver(() => {
-            this.#updateDocumentTitle(header.innerText);
-        });
-        headerObserver.observe(header, headerObserverOptions);
+        // Update document title and trigger autosave when the header changes
+        const debouncedSave = utilities.debounce(async () => await this.#storeNotepad(), 1000);
 
-        // ... Update document's title when new text is typed in the notepad title.
         header.addEventListener('input', (event) => {
-            document.title = event.target.innerText;
+            const newTitle = event.target.innerText;
+            this.#updateDocumentTitle(newTitle);
+
+            // Ensure the notepad is saved when the title changes
+            debouncedSave();
         });
 
         return header;
@@ -1389,8 +1316,9 @@ class Notepad {
         viewerToolbox.insertAdjacentElement('beforeend', notepadsSearchContainer);
 
         // Notepads toolbox - Toolbar - Event listener
-        notepadsSearch.addEventListener('input', (event) => {
-            const filteredNotepads = this.#filterNotepads(event.target.value.toLowerCase());
+        // Fixed: Added async so it can await the filter
+        notepadsSearch.addEventListener('input', async (event) => {
+            const filteredNotepads = await this.#filterNotepads(event.target.value.toLowerCase());
 
             // Update the notepads list with only the matching elements
             this.#updateNotepadsList(filteredNotepads);
@@ -1403,7 +1331,6 @@ class Notepad {
         // Notepads toolbox - Toolbar - Controls - New notepad
         const newNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M8 5.5a.5.5 0 0 1 .5.5v1.5H10a.5.5 0 0 1 0 1H8.5V10a.5.5 0 0 1-1 0V8.5H6a.5.5 0 0 1 0-1h1.5V6a.5.5 0 0 1 .5-.5z"/>
                 <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                 <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1425,7 +1352,6 @@ class Notepad {
         // Notepads toolbox - Toolbar - Controls - Import notepad
         const importNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M8 11a.5.5 0 0 0 .5-.5V6.707l1.146 1.147a.5.5 0 0 0 .708-.708l-2-2a.5.5 0 0 0-.708 0l-2 2a.5.5 0 1 0 .708.708L7.5 6.707V10.5a.5.5 0 0 0 .5.5z"/>
                 <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                 <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1445,7 +1371,6 @@ class Notepad {
         // Notepads toolbox - Toolbar - Controls - Backup - Create
         const backupNotepadsControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                    <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                     <path d="M7.293 1.5a1 1 0 0 1 1.414 0L11 3.793V2.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v3.293l2.354 2.353a.5.5 0 0 1-.708.708L8 2.207l-5 5V13.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 2 13.5V8.207l-.646.647a.5.5 0 1 1-.708-.708L7.293 1.5Z"/>
                     <path d="M10 13a1 1 0 0 1 1-1v-1a2 2 0 0 1 4 0v1a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-2Zm3-3a1 1 0 0 0-1 1v1h2v-1a1 1 0 0 0-1-1Z"/>
             </svg>`,
@@ -1473,7 +1398,6 @@ class Notepad {
         // Notepads toolbox - Toolbar - Controls - Backup - Restore
         const restoreNotepadsControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 14" focusable="false">
-                    <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                     <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2v1z"/>
                     <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466z"/>
                 </svg>`,
@@ -1501,30 +1425,8 @@ class Notepad {
         const notepadsList = document.createElement('div');
         notepadsList.classList.add('dialog-body', 'viewer-notepads-list');
 
-        // Notepads list placeholder
-        const checkNotepadsListLength = () => {
-            if (notepadsList.childNodes.length == 0) {
-                const notepadsListPlaceholder = document.createElement('div');
-                notepadsListPlaceholder.innerText = 'No notepads';
-                notepadsListPlaceholder.classList.add('viewer-list-empty');
-
-                notepadsList.insertAdjacentElement('beforeend', notepadsListPlaceholder);
-            }
-        };
-
-        // Initial check of the notepads list to ensure that check happens when no child element is inserted.
-        checkNotepadsListLength();
-
-        // Observe the notepads list and, if it's empty, add a 'no notepads' placeholder.
-        const notepadsListObserverOptions = { characterData: false, attributes: false, childList: true, subtree: true };
-
-        const notepadsListObserver = new MutationObserver(() => {
-            checkNotepadsListLength();
-        });
-
-        notepadsListObserver.observe(notepadsList, notepadsListObserverOptions);
-
-        // Trigger the first update of the list.
+        // Trigger the initial update of the list.
+        // This will now handle the "No notepads" state automatically.
         this.#updateNotepadsList(undefined, notepadsList);
 
         return notepadsList;
@@ -1540,6 +1442,9 @@ class Notepad {
     #createNotepadsListItem(notepad) {
         const notepadsListItem = document.createElement('div');
         notepadsListItem.classList.add('viewer-list-item');
+
+        // Event listener to the editable fields
+        const debouncedSave = utilities.debounce(async () => await this.#storeNotepad(), 1000);
 
         // Notepad - Last updated
         const lastUpdateUNIXTime = Number(notepad.lastUpdate);
@@ -1566,9 +1471,9 @@ class Notepad {
         notepadTitleControl.innerText = notepadTitle;
         notepadTitleControl.classList.add('viewer-notepad-title-container', 'viewer-notepad-title');
 
-        notepadTitleControl.addEventListener('click', () => {
+        notepadTitleControl.addEventListener('click', async () => {
             // Open the new notepad.
-            const storedNotepad = this.#getStoredNotepad(notepad.id);
+            const storedNotepad = await this.#getStoredNotepad(notepad.id);
             this.#fillNotepad(storedNotepad, true);
 
             // Close the notepads viewer.
@@ -1584,18 +1489,17 @@ class Notepad {
         // Notepad list item - Viewer controls - Duplicate
         const duplicateNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                    <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                     <path d="M5 0h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2 2 2 0 0 1-2 2H3a2 2 0 0 1-2-2h1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1H1a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v9a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1H3a2 2 0 0 1 2-2z"/>
                     <path d="M1 6v-.5a.5.5 0 0 1 1 0V6h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V9h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 2.5v.5H.5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H2v-.5a.5.5 0 0 0-1 0z"/>
             </svg>`,
             'Duplicate notepad',
             ['viewer-control-container'],
             ['viewer-control', 'hovering-label', 'viewer-duplicate-control'],
-            (event) => {
-                const storedNotepad = this.#getStoredNotepad(notepad.id);
+            async (event) => {
+                const storedNotepad = await this.#getStoredNotepad(notepad.id);
 
                 // Duplicate the stored notepad.
-                this.#duplicateNotepad(storedNotepad);
+                await this.#duplicateNotepad(storedNotepad);
 
                 // Rebuild the notepads list to include the duplicated one.
                 this.#updateNotepadsList();
@@ -1607,7 +1511,6 @@ class Notepad {
         // Notepad list item - Viewer controls - Export
         const exportNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M8 5a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 1 1 .708-.708L7.5 9.293V5.5A.5.5 0 0 1 8 5z"/>
                 <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                 <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1625,7 +1528,8 @@ class Notepad {
         // Notepad list item - Viewer controls - Delete - Confirmation dialog
         const deleteNotepadDialog = this.#addConfirmationDialog(
             () => {
-                this.deleteNotepad(notepad.id, notepadsListItem.remove());
+                // Fixed: Pass function callback for removal instead of executing immediately
+                this.deleteNotepad(notepad.id, () => notepadsListItem.remove());
             },
             'Delete',
             'Delete notepad?',
@@ -1636,7 +1540,6 @@ class Notepad {
         // Notepad list item - Viewer controls - Delete
         const deleteNotepadControl = this.#createControl(
             `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="svg-icon" viewBox="0 0 16 16" focusable="false">
-                <!-- Copyright (c) 2019-2021 The Bootstrap Authors - Licensed under the MIT License -->
                 <path fill-rule="evenodd" d="M6.146 6.146a.5.5 0 0 1 .708 0L8 7.293l1.146-1.147a.5.5 0 1 1 .708.708L8.707 8l1.147 1.146a.5.5 0 0 1-.708.708L8 8.707 6.854 9.854a.5.5 0 0 1-.708-.708L7.293 8 6.146 6.854a.5.5 0 0 1 0-.708z"/>
                 <path d="M3 0h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2v-1h1v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v1H1V2a2 2 0 0 1 2-2z"/>
                 <path d="M1 5v-.5a.5.5 0 0 1 1 0V5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0V8h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1zm0 3v-.5a.5.5 0 0 1 1 0v.5h.5a.5.5 0 0 1 0 1h-2a.5.5 0 0 1 0-1H1z"/>
@@ -1666,8 +1569,8 @@ class Notepad {
      *
      * @returns
      */
-    #filterNotepads(searchTerm = '', notepads = undefined) {
-        notepads = notepads || this.#getAllStoredNotepads();
+    async #filterNotepads(searchTerm = '', notepads = undefined) {
+        notepads = notepads || (await this.#getAllStoredNotepads());
 
         if (searchTerm) {
             for (const notepad in notepads) {
@@ -1745,12 +1648,12 @@ class Notepad {
      *
      * Format of actions:
      * [
-     *      {
-     *          action: {Function}, -- The action to be performed on click.
-     *          actionLabel: {String}, -- The label to be shown in the control.
-     *          classes: [array] -- Classes to be used to customise the control
-     *      },
-     *      ...
+     * {
+     * action: {Function}, -- The action to be performed on click.
+     * actionLabel: {String}, -- The label to be shown in the control.
+     * classes: [array] -- Classes to be used to customise the control
+     * },
+     * ...
      * ]
      *
      * @returns The HTML element representing the dialog.

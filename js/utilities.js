@@ -1,7 +1,7 @@
 /**
  * Split Page - Utilities
  *
- * Copyright (c) 2023 Francesco Ugolini <contact@francescougolini.com>
+ * Copyright (c) 2023-2026 Francesco Ugolini
  *
  * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
  * distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -9,7 +9,7 @@
 
 'use strict';
 
-export { countWords, getReadTime, downloadLocalFile, uploadLocalFile, generateID, dataFallbackMode };
+export { countWords, getReadTime, downloadLocalFile, uploadLocalFile, generateID, dataFallbackMode, debounce, StorageDB };
 
 /**
  * Count the number of words in a given string, including emojis.
@@ -30,79 +30,54 @@ const countWords = (targetString = '') => {
 
 /**
  * Get the time to (silently) read a text.
- *
- * The formula takes into consideration average value in English (silent reading it is 238, reading aloud it is 183).
- * NOTE: numbers are treated as words without being transliterated.
- *
- * @param {string} targetString The string to be processed.
- *
- * @return {number} The seconds required on average to silently read the string.
  */
 const getReadTime = (targetString = '') => {
     const wordNumber = countWords(targetString);
+    const seconds = Math.ceil(wordNumber / (238 / 60));
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
 
-    const timeToReadString = Math.ceil(wordNumber / (283 / 60));
+    const formattedTime = minutes > 0 ? minutes + 'm ' + remainingSeconds + 's' : remainingSeconds + 's';
 
-    return timeToReadString;
+    return formattedTime;
 };
 
 /**
- * Locally download the data as a file.
- *
- * @param {Object} content The content to be locally downloaded.
- * @param {String} contentType The MIME type of the file to be generated. Options: 'data:application/json' (default) or 'data:text/plain';
+ * Download data as a local file.
  */
-const downloadLocalFile = (content, filename, contentType = 'data:application/json') => {
-    try {
-        let processedContent;
+const downloadLocalFile = (data, filename, contentType) => {
+    const file = new Blob([data], { type: contentType });
+    const temporaryLink = document.createElement('a');
 
-        if (contentType == 'data:application/json') {
-            processedContent = JSON.stringify(content);
-        } else if (contentType == 'data:text/plain') {
-            processedContent = content;
-        } else {
-            alert('MIME type not supported: "' + contentType + '"');
-            return;
-        }
+    temporaryLink.href = URL.createObjectURL(file);
+    temporaryLink.download = filename;
 
-        // Encode the content to ensure all special characters are escaped.
-        const hrefValue = contentType + ';charset=utf-8,' + encodeURIComponent(processedContent);
+    temporaryLink.click();
 
-        const temporaryLink = document.createElement('a');
-        temporaryLink.setAttribute('href', hrefValue);
-        temporaryLink.setAttribute('download', filename);
-        temporaryLink.click();
-        temporaryLink.remove();
-    } catch (error) {
-        alert('File not downloaded. \nDetails: "' + error + '"');
-    }
+    URL.revokeObjectURL(temporaryLink.href);
+    temporaryLink.remove();
 };
 
 /**
- * Locally upload the content of a file.
- *
- * @param {Function} callbackAction The action to be performed to use the uploaded JSON file.
- * @param {String} contentType The MIME type of the file uploaded. Default: 'data:application/json'
+ * Upload a local file and process its content.
  */
-const uploadLocalFile = (callbackAction, contentType = 'data:application/json') => {
+const uploadLocalFile = (callbackAction, contentType = 'application/json') => {
     const temporaryInput = document.createElement('input');
+
     temporaryInput.type = 'file';
     temporaryInput.accept = contentType;
 
-    // Add event listener to the temporary input
     temporaryInput.onchange = (event) => {
-        const file = temporaryInput.files.item(0);
-
+        const file = event.target.files[0];
         const reader = new FileReader();
 
-        reader.addEventListener('load', () => {
+        reader.onload = (event) => {
             try {
-                const fileContent = reader.result;
-                callbackAction(fileContent);
+                callbackAction(event.target.result);
             } catch (error) {
-                alert('File not uploaded. \nDetails: "' + error + '"');
+                console.error('File reading failed: ' + error);
             }
-        });
+        };
 
         reader.readAsText(file);
     };
@@ -111,37 +86,103 @@ const uploadLocalFile = (callbackAction, contentType = 'data:application/json') 
     temporaryInput.remove();
 };
 
-/**
- * Generate an id using the UNIX time when the function is called and two optional front/back tags.
- *
- * Format: {frontTag}-{UNIX Time}-{backTag}
- *
- * @param {String} frontTag An optional string to be prepended to the UNIX time.
- * @param {String} backTag An optional string to be appended to the UNIX time.
- * @param {String} time The UNIX time to be used to build the id.
- *
- * @returns A string with a conventional/formatted id.
- */
 const generateID = (frontTag = '', backTag = '', time = Date.now()) => {
     return frontTag + time + backTag;
 };
 
-/**
- * Run an action with a new data and, in case it fails, use the old data to return to the previous state.
- *
- * @param {Object} oldData The data that represent the 'original state'.
- * @param {Object} newData The data that will be used to change the 'original state'.
- * @param {Function} action A function that accepts the data as its argument.
- */
 const dataFallbackMode = (oldData, newData, action) => {
     try {
-        // Run the action with the new data.
         action(newData);
     } catch (error) {
-        // Run the action with the old data to restore the original state.
+        console.error('Action failed, reverting.', error);
         action(oldData);
-
-        // Show an alert with an error message.
-        alert('The action could not be performed.\n' + error);
     }
 };
+
+/**
+ * Debounce function to limit the rate at which a function can fire.
+ */
+const debounce = (func, wait) => {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+};
+
+/**
+ * IndexedDB Wrapper for asynchronous storage.
+ */
+class StorageDB {
+    constructor(dbName = 'SplitPageDB', storeName = 'notepads') {
+        this.dbName = dbName;
+        this.storeName = storeName;
+        this.db = null;
+    }
+
+    async init() {
+        if (this.db) return this.db;
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, 1);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName, { keyPath: 'id' });
+                }
+            };
+            request.onsuccess = (e) => {
+                this.db = e.target.result;
+                resolve(this.db);
+            };
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async set(value) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).put(value);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    async get(id) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readonly');
+            const request = tx.objectStore(this.storeName).get(id);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async getAll() {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readonly');
+            const request = tx.objectStore(this.storeName).getAll();
+            request.onsuccess = () => {
+                const map = {};
+                request.result.forEach((item) => (map[item.id] = item));
+                resolve(map);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async delete(id) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readwrite');
+            tx.objectStore(this.storeName).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+}

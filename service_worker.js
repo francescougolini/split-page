@@ -3,7 +3,7 @@
  */
 
 // Cache name
-const cacheName = 'split-page-v1';
+const cacheName = 'split-page-v2';
 
 // List of files to be pre-cached
 const preCacheResources = [
