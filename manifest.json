@@ -1,23 +1,15 @@
 {
-    "name": "Split Page",
-    "short_name": "Split Page",
-    "start_url": ".",
-    "display": "standalone",
-    "background_color": "#ffffff",
-    "theme_color": "#4d4845",
-    "description": "A simple web app to write, organise and keep notes.",
-    "icons": [
-      {
-        "purpose": "any",
-        "src": "img/logo.svg",
-        "sizes": "48x48, 72x72, 96x96, 128x128, 256x256, 512x512",
-        "type": "image/svg+xml"
-      },
-      {
-        "purpose": "maskable",
-        "src": "img/maskable_logo.svg",
-        "sizes": "48x48, 72x72, 96x96, 128x128, 256x256, 512x512",
-        "type": "image/svg+xml"
-      }
-    ]
+	"short_name": "Sidenotes",
+  "name": "Sidenotes - Notes App",
+  "icons": [
+    {
+      "src": "assets/favicon.png",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#4d4845",
+  "background_color": "#ffffff"
 }

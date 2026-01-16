@@ -1,27 +1,28 @@
 /**
+ * Sidenotes - Notes App
+ *
+ * Copyright (c) 2023-2026 Francesco Ugolini
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
+ * distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/**
  * Service worker to enable the 'offline mode'.
  */
 
 // Cache name
-const cacheName = 'split-page-v2';
+const cacheName = 'sidenote-react-v1';
 
 // List of files to be pre-cached
-const preCacheResources = [
-    './',
-    './index.html',
-    './js/init.js',
-    './js/notepad.js',
-    './js/utilities.js',
-    './css/stylesheet.css',
-    './img/favicon.png',
-];
+// In a Vite build, these paths change. A robust SW strategies usually involves
+// a build step to inject the manifest. For now, we cache the root.
+const preCacheResources = ['/', '/index.html', '/manifest.json'];
 
-// When the service worker is installing, open the cache and add the pre-cache resources to it.
 self.addEventListener('install', (event) => {
     event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll(preCacheResources)));
 });
 
-// On fetch request, try with a pre-cached resource, otherwise fall back to the network.
 self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
@@ -29,6 +30,6 @@ self.addEventListener('fetch', (event) => {
                 return cachedResponse;
             }
             return fetch(event.request);
-        })
+        }),
     );
 });
