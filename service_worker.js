@@ -12,16 +12,7 @@
  */
 
 // Cache name
-const cacheName = 'sidenote-react-v1';
-
-// List of files to be pre-cached
-// In a Vite build, these paths change. A robust SW strategies usually involves
-// a build step to inject the manifest. For now, we cache the root.
-const preCacheResources = ['/', '/index.html', '/manifest.json'];
-
-self.addEventListener('install', (event) => {
-    event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll(preCacheResources)));
-});
+const cacheName = 'sidenotes-v1';
 
 self.addEventListener('fetch', (event) => {
     event.respondWith(
